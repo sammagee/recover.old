@@ -5,7 +5,7 @@ export default function Home() {
   let fileHandle
   const showFilePicker = async() => {
     if (typeof window === 'undefined') return
-    directoryHandle = await window.showDirectoryPicker();
+    const directoryHandle = await window.showDirectoryPicker()
     console.log(directoryHandle)
   }
 
