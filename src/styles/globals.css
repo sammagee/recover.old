@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  ::selection {
+    @apply bg-green-200 text-green-900;
+  }
+}
