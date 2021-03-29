@@ -1,12 +1,12 @@
 import Head from 'next/head'
 import Details from '../components/details'
+import TextLoop from 'react-text-loop'
 
 export default function Home() {
-  let fileHandle
+  let directoryHandle
   const showFilePicker = async() => {
     if (typeof window === 'undefined') return
-    const directoryHandle = await window.showDirectoryPicker()
-    console.log(directoryHandle)
+    directoryHandle = await window.showDirectoryPicker()
   }
 
   return (
@@ -20,7 +20,13 @@ export default function Home() {
         <div className="w-full max-w-lg mx-auto">
           <h1 className="text-4xl font-black text-white">Recover</h1>
           <h2 className="mt-2 text-2xl font-bold text-green-200">
-            Save the memories that
+            Save the{' '}
+            <TextLoop className="text-green-500" interval={5000}>
+              <span>memories</span>
+              <span>conversations</span>
+              <span>voicemails</span>
+            </TextLoop>
+            {' '}that
             <br />
             mean the world to you
           </h2>
