@@ -1,7 +1,7 @@
 import Head from 'next/head'
 import Details from '../components/details'
 import TextLoop from 'react-text-loop'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import initSqlJs from 'sql.js'
 import Button from '../components/button'
@@ -20,11 +20,26 @@ export default function Home() {
   const [parent, setParent] = useState()
   const [showModal, setShowModal] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
+  const backupBtn = useRef(null)
+  const locateBtn = useRef(null)
+  const openBtn = useRef(null)
+  const messagesBtn = useRef(null)
+
+  const locate = () => {
+    setStep(Step.LOCATE)
+    setTimeout(() => locateBtn.current?.focus(), 0)
+  }
+
+  const open = () => {
+    setStep(Step.OPEN)
+    setTimeout(() => openBtn.current?.focus(), 0)
+  }
 
   const showDirectoryPicker = async() => {
     if (typeof window === 'undefined') return
     setParent(await window.showDirectoryPicker())
     setStep(Step.EXPORT)
+    setTimeout(() => messagesBtn.current?.focus(), 0)
   }
 
   const readFileAsync = (file) => {
@@ -56,6 +71,8 @@ export default function Home() {
     setLoadingMessages(false)
     setShowModal(true)
   }
+
+  useEffect(() => backupBtn.current?.focus(), [backupBtn])
 
   useEffect(async() => setSQL(await initSqlJs({ locateFile: file => `https://sql.js.org/dist/${file}` })), [])
 
@@ -99,7 +116,7 @@ export default function Home() {
                     it to finish.
                   </p>
 
-                  <Button className="w-full" onClick={() => setStep(Step.LOCATE)}>
+                  <Button ref={backupBtn} className="w-full" onClick={locate}>
                     I'm backed up
                   </Button>
                 </Details>
@@ -143,7 +160,7 @@ export default function Home() {
                     </p>
                   </div>
 
-                  <Button className="w-full mt-6" onClick={() => setStep(Step.OPEN)}>
+                  <Button ref={locateBtn} className="w-full mt-6" onClick={open}>
                     Found It
                   </Button>
                 </Details>
@@ -170,7 +187,7 @@ export default function Home() {
                     </p>
                   </div>
 
-                  <Button className="w-full mt-6" onClick={showDirectoryPicker}>
+                  <Button ref={openBtn} className="w-full mt-6" onClick={showDirectoryPicker}>
                     Open Backup Folder
                   </Button>
                 </Details>
@@ -182,6 +199,7 @@ export default function Home() {
                   open={step === Step.EXPORT}
                 >
                   <Button
+                    ref={messagesBtn}
                     className="w-full mt-6"
                     disabled={loadingMessages}
                     onClick={getMessages}
