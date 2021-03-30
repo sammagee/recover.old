@@ -24,6 +24,9 @@ module.exports = {
             strong: {
               color: theme('colors.gray.300'),
             },
+            a: {
+              color: theme('colors.gray.300'),
+            },
           },
         },
       }),

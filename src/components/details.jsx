@@ -1,13 +1,19 @@
 import { Transition } from '@headlessui/react'
 import clsx from 'clsx'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
-export default function Details({children, open = false, summary}) {
+export default function Details({children, disabled, open = false, summary}) {
   const [isOpen, setIsOpen] = useState(open)
+
+  useEffect(() => setIsOpen(open), [open])
 
   return (
     <>
-      <button className="flex items-center justify-between w-full" onClick={() => setIsOpen(!isOpen)}>
+      <button
+        className={clsx('flex items-center justify-between w-full focus:outline-none', disabled && 'opacity-25 cursor-not-allowed')}
+        disabled={disabled}
+        onClick={() => setIsOpen(!isOpen)}
+      >
         <div>{summary}</div>
 
         <svg viewBox="0 0 100 101" fill="currentColor" className={clsx('w-6 h-6 text-gray-500 transform transition-transform ease-in-out duration-250 rotate-90', isOpen && 'rotate-0')}>
