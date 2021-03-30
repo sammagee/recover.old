@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import initSqlJs from 'sql.js'
 import Button from '../components/button'
+import Modal from '../components/modal'
 
 const Step = {
   BACKUP: 'backup',
@@ -17,6 +18,7 @@ export default function Home() {
   const [step, setStep] = useState(Step.BACKUP)
   const [SQL, setSQL] = useState()
   const [parent, setParent] = useState()
+  const [showModal, setShowModal] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
 
   const showDirectoryPicker = async() => {
@@ -52,6 +54,7 @@ export default function Home() {
         ON handle.rowid = message.handle_id
     `))
     setLoadingMessages(false)
+    setShowModal(true)
   }
 
   useEffect(async() => setSQL(await initSqlJs({ locateFile: file => `https://sql.js.org/dist/${file}` })), [])
@@ -63,7 +66,7 @@ export default function Home() {
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      <main className="py-32">
+      <main className="p-8 sm:py-32">
         <div className="w-full max-w-lg mx-auto">
           <h1 className="text-4xl font-black text-white">Recover</h1>
           <h2 className="mt-2 text-2xl font-bold text-green-200">
@@ -96,7 +99,7 @@ export default function Home() {
                     it to finish.
                   </p>
 
-                  <Button onClick={() => setStep(Step.LOCATE)}>
+                  <Button className="w-full" onClick={() => setStep(Step.LOCATE)}>
                     I'm backed up
                   </Button>
                 </Details>
@@ -140,7 +143,7 @@ export default function Home() {
                     </p>
                   </div>
 
-                  <Button onClick={() => setStep(Step.OPEN)}>
+                  <Button className="w-full mt-6" onClick={() => setStep(Step.OPEN)}>
                     Found It
                   </Button>
                 </Details>
@@ -167,7 +170,7 @@ export default function Home() {
                     </p>
                   </div>
 
-                  <Button onClick={showDirectoryPicker}>
+                  <Button className="w-full mt-6" onClick={showDirectoryPicker}>
                     Open Backup Folder
                   </Button>
                 </Details>
@@ -178,11 +181,8 @@ export default function Home() {
                   disabled={[Step.BACKUP, Step.LOCATE, Step.OPEN].includes(step) || !parent}
                   open={step === Step.EXPORT}
                 >
-                  <button
-                    className={clsx(
-                      'flex items-center w-full px-5 py-4 mt-4 text-base font-semibold text-green-100 uppercase transition-colors duration-200 transform bg-green-500 border-t border-green-400 shadow rounded-xl hover:bg-green-400 focus:ring-2 focus:outline-none focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-green-500',
-                      loadingMessages && 'opacity-50 cursor-not-allowed hover:bg-green-500',
-                    )}
+                  <Button
+                    className="w-full mt-6"
                     disabled={loadingMessages}
                     onClick={getMessages}
                   >
@@ -196,13 +196,72 @@ export default function Home() {
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                       </svg>
                     )}
-                  </button>
+                  </Button>
                 </Details>
               </li>
             </ol>
           </article>
         </div>
       </main>
+
+      <Modal
+        actions={(
+          <>
+            <Button className="focus:ring-offset-gray-800" variant="secondary" onClick={() => setShowModal(false)}>Close</Button>
+            <Button className="focus:ring-offset-gray-800" onClick={() => setShowModal(false)}>Download Messages</Button>
+          </>
+        )}
+        icon={<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />}
+        show={showModal}
+        setShow={setShowModal}
+        title="Export Messages"
+      >
+        <h3 className="text-sm font-semibold text-gray-500">Choose a Conversation</h3>
+        <ul className="mt-3 -ml-6 overflow-y-auto max-h-48 shadow-scroll">
+          <li>
+            <button className="flex items-center justify-between w-full px-6 py-2 text-left transition-colors duration-200 ease-in-out rounded-xl focus:outline-none hover:bg-gray-800 focus:bg-gray-800 group">
+              <div>
+                <span className="font-semibold">Dad</span>
+                <p className="text-sm">Luv u 2 honey</p>
+              </div>
+              <div className="flex-shrink-0"><div className="w-12 h-12 transition-colors duration-200 ease-in-out bg-gray-700 border-4 border-gray-900 rounded-full group-hover:border-gray-800 group-focus:border-gray-800" /></div>
+            </button>
+          </li>
+          <li>
+            <button className="flex items-center justify-between w-full px-6 py-2 text-left transition-colors duration-200 ease-in-out rounded-xl focus:outline-none hover:bg-gray-800 focus:bg-gray-800 group">
+              <div>
+                <span className="font-semibold">Sam</span>
+                <p className="text-sm">i love you most ❤️</p>
+              </div>
+              <div className="flex-shrink-0"><div className="w-12 h-12 transition-colors duration-200 ease-in-out bg-gray-700 border-4 border-gray-900 rounded-full group-hover:border-gray-800 group-focus:border-gray-800" /></div>
+            </button>
+          </li>
+          <li>
+            <button className="flex items-center justify-between w-full px-6 py-2 text-left transition-colors duration-200 ease-in-out rounded-xl focus:outline-none hover:bg-gray-800 focus:bg-gray-800 group">
+              <div>
+                <span className="font-semibold">Aunt Barb, Dad</span>
+                <p className="text-sm">It was nice seeing you this weekend</p>
+              </div>
+              <div className="flex items-center flex-shrink-0 -space-x-6">
+                <div className="w-12 h-12 transition-colors duration-200 ease-in-out bg-gray-700 border-4 border-gray-900 rounded-full group-hover:border-gray-800 group-focus:border-gray-800" />
+                <div className="w-12 h-12 transition-colors duration-200 ease-in-out bg-gray-700 border-4 border-gray-900 rounded-full group-hover:border-gray-800 group-focus:border-gray-800" />
+              </div>
+            </button>
+          </li>
+          <li>
+            <button className="flex items-center justify-between w-full px-6 py-2 text-left transition-colors duration-200 ease-in-out rounded-xl focus:outline-none hover:bg-gray-800 focus:bg-gray-800 group">
+              <div>
+                <span className="font-semibold">Aunt Barb, Dad</span>
+                <p className="text-sm">It was nice seeing you this weekend</p>
+              </div>
+              <div className="flex items-center flex-shrink-0 -space-x-6">
+                <div className="w-12 h-12 transition-colors duration-200 ease-in-out bg-gray-700 border-4 border-gray-900 rounded-full group-hover:border-gray-800 group-focus:border-gray-800" />
+                <div className="w-12 h-12 transition-colors duration-200 ease-in-out bg-gray-700 border-4 border-gray-900 rounded-full group-hover:border-gray-800 group-focus:border-gray-800" />
+              </div>
+            </button>
+          </li>
+        </ul>
+      </Modal>
     </>
   );
 }

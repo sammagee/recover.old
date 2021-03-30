@@ -12,6 +12,7 @@ class Document extends NextDocument {
         <Head />
         <body className="bg-gray-900">
           <Main />
+          <div id="modals" />
           <NextScript />
         </body>
       </Html>
