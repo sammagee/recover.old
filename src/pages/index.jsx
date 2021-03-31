@@ -456,7 +456,8 @@ export default function Home() {
                     </span>
                   )}
 
-                  {index > 0 && message[1] === 1 && message[1] !== messages[index - 1][1] && (
+                  {((index > 0 && message[1] === 1 && message[1] !== messages[index - 1][1])
+                    || (index === 0 && message[1] === 1)) && (
                     <span className="mr-3 text-xs">
                       <span className="text-gray-500">{dayjs(message[2]).fromNow()}{' '} &middot; {' '}</span>Me
                     </span>
