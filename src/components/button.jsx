@@ -6,6 +6,7 @@ const Button = forwardRef(({
   className,
   disabled,
   loading,
+  offsetClass = 'focus:ring-offset-gray-900',
   onClick,
   variant = 'primary',
 }, ref) => {
@@ -16,7 +17,7 @@ const Button = forwardRef(({
     ),
     secondary: clsx(
       'text-gray-200 focus:ring-2 focus:outline-none focus:ring-gray-700',
-      !(disabled || loading) && 'hover:bg-gray-700'
+      !(disabled || loading) && 'hover:bg-gray-700',
     ),
   }[variant]
 
@@ -24,7 +25,8 @@ const Button = forwardRef(({
     <button
       ref={ref}
       className={clsx(
-        'flex items-center justify-center px-6 py-4 text-base font-semibold uppercase transition-colors duration-200 ease-in-out transform rounded-xl focus:ring-offset-2 focus:ring-offset-gray-900',
+        'flex items-center justify-center px-6 py-4 text-base font-semibold uppercase transition-colors duration-200 ease-in-out transform rounded-xl focus:ring-offset-2',
+        offsetClass,
         (disabled || loading) && 'opacity-50 cursor-not-allowed select-none',
         classes,
         className,

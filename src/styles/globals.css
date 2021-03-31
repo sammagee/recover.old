@@ -3,8 +3,12 @@
 @tailwind utilities;
 
 @layer components {
+  * {
+    @apply relative;
+  }
+
   ::selection {
-    @apply bg-green-200 text-green-900;
+    @apply bg-black bg-opacity-30;
   }
 
   .shadow-scroll {

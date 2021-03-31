@@ -2,10 +2,43 @@ import Head from 'next/head'
 import Details from '../components/details'
 import TextLoop from 'react-text-loop'
 import { useEffect, useRef, useState } from 'react'
-import clsx from 'clsx'
 import initSqlJs from 'sql.js'
 import Button from '../components/button'
 import Modal from '../components/modal'
+import clsx from 'clsx'
+import dayjs from 'dayjs'
+import relativeTime from 'dayjs/plugin/relativeTime'
+import updateLocale from 'dayjs/plugin/updateLocale'
+
+dayjs.extend(relativeTime)
+dayjs.extend(updateLocale)
+dayjs.updateLocale('en', {
+  relativeTime: {
+    future: 'in %s',
+    past: '%s ago',
+    s: '%ds',
+    m: '1min',
+    mm: '%dmin',
+    h: '1hr',
+    hh: '%dhr',
+    d: '1d',
+    dd: '%dd',
+    M: '1mo',
+    MM: '%dmo',
+    y: '1y',
+    yy: '%dy',
+  },
+})
+
+const Databases = {
+  ADDRESS_BOOK: undefined,
+  SMS: undefined,
+}
+
+const Locations = {
+  ADDRESS_BOOK: '31bb7ba8914766d4ba40d6dfb6113c8b614be442',
+  SMS: '3d0d7e5fb2ce288813306e4d4636395e047a3d28',
+}
 
 const Step = {
   BACKUP: 'backup',
@@ -14,16 +47,23 @@ const Step = {
   EXPORT: 'export',
 }
 
+const cache = {}
+
 export default function Home() {
   const [step, setStep] = useState(Step.BACKUP)
   const [SQL, setSQL] = useState()
   const [parent, setParent] = useState()
   const [showModal, setShowModal] = useState(false)
+  const [loadingConversations, setLoadingConversations] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
+  const [conversations, setConversations] = useState([])
+  const [messages, setMessages] = useState([])
+  const [selectedConversation, setSelectedConversation] = useState()
   const backupBtn = useRef(null)
   const locateBtn = useRef(null)
   const openBtn = useRef(null)
   const messagesBtn = useRef(null)
+  const messagesContainer = useRef(null)
 
   const locate = () => {
     setStep(Step.LOCATE)
@@ -42,7 +82,7 @@ export default function Home() {
     setTimeout(() => messagesBtn.current?.focus(), 0)
   }
 
-  const readFileAsync = (file) => {
+  const readFileAsync = file => {
     return new Promise((resolve, reject) => {
       let reader = new FileReader()
       reader.onload = () => resolve(reader.result)
@@ -51,25 +91,119 @@ export default function Home() {
     })
   }
 
-  const getMessages = async() => {
-    setLoadingMessages(true)
-    const dirHandle = await parent.getDirectoryHandle('3d')
-    const fileHandle = await dirHandle.getFileHandle('3d0d7e5fb2ce288813306e4d4636395e047a3d28')
+  const DB = async(location) => {
+    if (Databases[location] !== undefined) {
+      return Databases[location]
+    }
+
+    const dirHandle = await parent.getDirectoryHandle(Locations[location].slice(0, 2))
+    const fileHandle = await dirHandle.getFileHandle(Locations[location])
     const file = await fileHandle.getFile()
     const arrayBuffer = await readFileAsync(file)
-    const db = new SQL.Database(new Uint8Array(arrayBuffer))
-    console.log(db.exec(`
+
+    Databases[location] = new SQL.Database(new Uint8Array(arrayBuffer))
+
+    return Databases[location]
+  }
+
+  const parseTimestamp = field_name => {
+    return `CASE WHEN (${field_name} > 1000000000) THEN datetime(${field_name} / 1000000000 + 978307200, 'unixepoch') 
+      WHEN ${field_name} <> 0 THEN datetime((${field_name} + 978307200), 'unixepoch') 
+      ELSE ${field_name} END`
+  }
+
+  const getName = async(messageDest) => {
+    if (messageDest.indexOf('@') === -1) {
+      messageDest = messageDest.replace(/[\s+\-()]*/g, '')
+      if (messageDest.length === 11 && messageDest[0] === '1') {
+        messageDest = messageDest.substring(1)
+      }
+    }
+
+    if (cache[messageDest] !== undefined) {
+      return cache[messageDest]
+    }
+
+    const result = (await DB('ADDRESS_BOOK')).exec(`
       SELECT
-        message.*,
-        handle.id as sender_name
-      FROM chat_message_join
-      INNER JOIN message
-        ON message.rowid = chat_message_join.message_id
-      INNER JOIN handle
-        ON handle.rowid = message.handle_id
-    `))
-    setLoadingMessages(false)
+        c0First as first,
+        c1Last as last
+      FROM ABPersonFullTextSearch_content
+      WHERE c16Phone LIKE '%${messageDest}%'
+    `)
+    let name = result?.[0]?.values?.[0]
+    name = typeof name !== 'undefined' && name[0]
+      ? name[1] ? `${name[0]} ${name[1]}` : name[0]
+      : messageDest
+
+    cache[messageDest] = name
+
+    return name
+  }
+
+  const getConversations = async() => {
+    setLoadingConversations(true)
+
+    const conversationsTemp = (await DB('SMS')).exec(`
+      SELECT
+        messages.chat_identifier,
+        messages.is_from_me,
+        messages.date,
+        messages.text
+      FROM (
+        SELECT
+          chat.chat_identifier,
+          message.ROWID,
+          message.is_from_me,
+          message.date,
+          message.text
+        FROM message
+        JOIN chat_message_join
+          ON message.ROWID = chat_message_join.message_id
+        JOIN chat
+            ON chat.ROWID = chat_message_join.chat_id
+        ORDER BY message.date DESC
+      ) AS messages
+      GROUP BY messages.chat_identifier
+      ORDER BY messages.date DESC
+    `)?.[0]?.values
+    const conversationsMap = await conversationsTemp.map(async(conversation) => {
+      const name = await getName(conversation[0])
+      const initials = name.replace(/[^a-zA-Z\s]/g, '').match(/\b\w/g)?.join('').toUpperCase()
+      return [...conversation, name, initials]
+    })
+    setConversations(await Promise.all(conversationsMap))
+    setLoadingConversations(false)
     setShowModal(true)
+  }
+
+  const selectConversation = async(conversation) => {
+    setLoadingMessages(true)
+    setSelectedConversation(conversation)
+
+    const messagesTemp = (await DB('SMS')).exec(`
+      SELECT
+        chat.chat_identifier,
+        message.is_from_me,
+        ${parseTimestamp('message.date')} AS date,
+        message.text,
+        message.service
+      FROM message
+      JOIN chat_message_join
+        ON message.ROWID = chat_message_join.message_id
+      JOIN chat
+        ON chat.ROWID = chat_message_join.chat_id
+      WHERE chat.chat_identifier = '${conversation[0]}'
+      ORDER BY message.date ASC
+    `)?.[0]?.values
+    const messagesMap = await messagesTemp.map(async(message) => {
+      const name = await getName(message[0])
+      const initials = name.replace(/[^a-zA-Z\s]/g, '').match(/\b\w/g)?.join('').toUpperCase()
+      return [...message, name, initials]
+    })
+    setMessages(await Promise.all(messagesMap))
+    setLoadingMessages(false)
+    messagesContainer.current.scrollTop = messagesContainer.current.scrollHeight
   }
 
   useEffect(() => backupBtn.current?.focus(), [backupBtn])
@@ -201,14 +335,14 @@ export default function Home() {
                   <Button
                     ref={messagesBtn}
                     className="w-full mt-6"
-                    disabled={loadingMessages}
-                    onClick={getMessages}
+                    disabled={loadingConversations}
+                    onClick={getConversations}
                   >
-                    {loadingMessages && <span className="flex-shrink-0 inline-block w-5" />}
+                    {loadingConversations && <span className="flex-shrink-0 inline-block w-5" />}
 
                     <span className="flex-1 mx-4 text-center">Messages</span>
 
-                    {loadingMessages && (
+                    {loadingConversations && (
                       <svg className="flex-shrink-0 w-5 h-5 text-green-100 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
@@ -225,8 +359,8 @@ export default function Home() {
       <Modal
         actions={(
           <>
-            <Button className="focus:ring-offset-gray-800" variant="secondary" onClick={() => setShowModal(false)}>Close</Button>
-            <Button className="focus:ring-offset-gray-800" onClick={() => setShowModal(false)}>Download Messages</Button>
+            <Button offsetClass="focus:ring-offset-gray-800" variant="secondary" onClick={() => setShowModal(false)}>Close</Button>
+            {messages.length > 0 && <Button offsetClass="focus:ring-offset-gray-800" onClick={() => setShowModal(false)}>Download Messages</Button>}
           </>
         )}
         icon={<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />}
@@ -234,51 +368,145 @@ export default function Home() {
         setShow={setShowModal}
         title="Export Messages"
       >
-        <h3 className="text-sm font-semibold text-gray-500">Choose a Conversation</h3>
-        <ul className="mt-3 -ml-6 overflow-y-auto max-h-48 shadow-scroll">
-          <li>
-            <button className="flex items-center justify-between w-full px-6 py-2 text-left transition-colors duration-200 ease-in-out rounded-xl focus:outline-none hover:bg-gray-800 focus:bg-gray-800 group">
-              <div>
-                <span className="font-semibold">Dad</span>
-                <p className="text-sm">Luv u 2 honey</p>
-              </div>
-              <div className="flex-shrink-0"><div className="w-12 h-12 transition-colors duration-200 ease-in-out bg-gray-700 border-4 border-gray-900 rounded-full group-hover:border-gray-800 group-focus:border-gray-800" /></div>
-            </button>
-          </li>
-          <li>
-            <button className="flex items-center justify-between w-full px-6 py-2 text-left transition-colors duration-200 ease-in-out rounded-xl focus:outline-none hover:bg-gray-800 focus:bg-gray-800 group">
-              <div>
-                <span className="font-semibold">Sam</span>
-                <p className="text-sm">i love you most ❤️</p>
-              </div>
-              <div className="flex-shrink-0"><div className="w-12 h-12 transition-colors duration-200 ease-in-out bg-gray-700 border-4 border-gray-900 rounded-full group-hover:border-gray-800 group-focus:border-gray-800" /></div>
-            </button>
-          </li>
-          <li>
-            <button className="flex items-center justify-between w-full px-6 py-2 text-left transition-colors duration-200 ease-in-out rounded-xl focus:outline-none hover:bg-gray-800 focus:bg-gray-800 group">
-              <div>
-                <span className="font-semibold">Aunt Barb, Dad</span>
-                <p className="text-sm">It was nice seeing you this weekend</p>
-              </div>
-              <div className="flex items-center flex-shrink-0 -space-x-6">
-                <div className="w-12 h-12 transition-colors duration-200 ease-in-out bg-gray-700 border-4 border-gray-900 rounded-full group-hover:border-gray-800 group-focus:border-gray-800" />
-                <div className="w-12 h-12 transition-colors duration-200 ease-in-out bg-gray-700 border-4 border-gray-900 rounded-full group-hover:border-gray-800 group-focus:border-gray-800" />
-              </div>
-            </button>
-          </li>
-          <li>
-            <button className="flex items-center justify-between w-full px-6 py-2 text-left transition-colors duration-200 ease-in-out rounded-xl focus:outline-none hover:bg-gray-800 focus:bg-gray-800 group">
-              <div>
-                <span className="font-semibold">Aunt Barb, Dad</span>
-                <p className="text-sm">It was nice seeing you this weekend</p>
-              </div>
-              <div className="flex items-center flex-shrink-0 -space-x-6">
-                <div className="w-12 h-12 transition-colors duration-200 ease-in-out bg-gray-700 border-4 border-gray-900 rounded-full group-hover:border-gray-800 group-focus:border-gray-800" />
-                <div className="w-12 h-12 transition-colors duration-200 ease-in-out bg-gray-700 border-4 border-gray-900 rounded-full group-hover:border-gray-800 group-focus:border-gray-800" />
-              </div>
-            </button>
-          </li>
-        </ul>
+        <h3 className="text-sm font-semibold text-gray-500">
+          {messages.length > 0 ? (
+            <div className="flex items-center space-x-2">
+              <button
+                className="focus:outline-none focus:ring-2 focus:ring-green-500"
+                onClick={() => {
+                  setMessages([])
+                  setSelectedConversation(undefined)
+                }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="w-4 h-4 text-gray-500">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+              </button>
+
+              <span>Conversation with <span className="text-gray-400">{selectedConversation[4]}</span></span>
+            </div>
+          ) : 'Choose a Conversation'}
+        </h3>
+
+        {messages.length > 0 && (
+          <ul
+            ref={messagesContainer}
+            className="mt-3 overflow-y-auto max-h-48 shadow-scroll overscroll-contain"
+          >
+            {messages.map((message, index) => (
+              <li
+                className={clsx(
+                  'max-w-xs flex items-end',
+                  message[1] === 1 && 'ml-auto justify-end',
+                  index > 0 && message[1] !== messages[index - 1][1] ? 'mt-2' : 'mt-px',
+                )}
+                key={message[2] + index}
+              >
+                {((index < messages.length - 1 && index > 0
+                    && message[1] === 0
+                    && message[1] !== messages[index + 1][1]
+                    && message[1] === messages[index - 1][1]
+                  ) || ((index < messages.length - 1 && index > 0)
+                    && message[1] === 0
+                    && message[1] !== messages[index - 1][1]
+                    && message[1] !== messages[index + 1][1]
+                  ) || ((index === 0
+                      && message[1] === 0
+                      && message[1] !== messages[index + 1][1])
+                    ) || (index === messages.length - 1
+                      && message[1] === 0
+                      && message[1] !== messages[index - 1][1]))
+                  && (
+                  <div className="flex items-center justify-center flex-shrink-0 w-8 h-8 mr-2 transition-colors duration-200 ease-in-out bg-gray-700 rounded-full select-none group-hover:border-gray-800 group-focus:border-gray-800">
+                    {message[6] ? (
+                      <span className="text-sm font-semibold">{message[6]}</span>
+                    ) : (
+                      <span className="inline-flex items-center justify-center overflow-hidden rounded-full">
+                        <svg className="w-4 h-4" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 83 89">
+                          <path d="M41.864 43.258c10.45 0 19.532-9.375 19.532-21.582C61.396 9.616 52.314.68 41.864.68c-10.449 0-19.53 9.13-19.53 21.093 0 12.11 9.032 21.485 19.53 21.485zM11.152 88.473H72.48c7.715 0 10.449-2.198 10.449-6.495 0-12.597-15.772-29.98-41.113-29.98C16.523 51.998.75 69.381.75 81.978c0 4.297 2.735 6.495 10.4 6.495z" />
+                        </svg>
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                <div
+                  className={clsx(
+                    !((index < messages.length - 1 && index > 0
+                      && message[1] === 0
+                      && message[1] !== messages[index + 1][1]
+                      && message[1] === messages[index - 1][1]
+                    ) || ((index < messages.length - 1 && index > 0)
+                      && message[1] === 0
+                      && message[1] !== messages[index - 1][1]
+                      && message[1] !== messages[index + 1][1]
+                    ) || ((index === 0
+                        && message[1] === 0
+                        && message[1] !== messages[index + 1][1])
+                      ) || (index === messages.length - 1
+                        && message[1] === 0
+                        && message[1] !== messages[index - 1][1])) && 'ml-10',
+                    message[1] === 1 && 'text-right',
+                  )}
+                >
+                  {((index > 0 && message[1] === 0 && message[1] !== messages[index - 1][1])
+                    || (index === 0 && message[1] === 0)) && (
+                    <span className="ml-3 text-xs">
+                      {message[5]}<span className="text-gray-500">{' '} &middot; {' '}{dayjs(message[2]).fromNow()}</span>
+                    </span>
+                  )}
+
+                  {index > 0 && message[1] === 1 && message[1] !== messages[index - 1][1] && (
+                    <span className="mr-3 text-xs">
+                      <span className="text-gray-500">{dayjs(message[2]).fromNow()}{' '} &middot; {' '}</span>Me
+                    </span>
+                  )}
+
+                  <div
+                    className={clsx(
+                      'py-1 px-3 rounded-2xl max-w-max',
+                      message[1] === 1 ? message[4] === 'SMS' ? 'bg-green-500 text-green-100' : 'bg-blue-500 text-blue-100' : 'bg-gray-700 text-gray-300',
+                      message[1] === 1 && 'ml-auto',
+                    )}
+                  >
+                    <p className="text-left break-word">{message[3]}</p>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {messages.length === 0 && (
+          <ul className="mt-3 -ml-6 overflow-y-auto max-h-48 shadow-scroll overscroll-contain">
+            {conversations.map(conversation => (
+              <li key={conversation[0]}>
+                <button
+                  className="flex items-center justify-between w-full px-6 py-2 space-x-3 text-left transition-colors duration-200 ease-in-out rounded-xl focus:outline-none hover:bg-gray-800 focus:bg-gray-800 group"
+                  onClick={() => selectConversation(conversation)}
+                >
+                  <div>
+                    <span className="font-semibold">{conversation[4]}</span>
+                    <p className="text-sm line-clamp-1">{conversation[3]}</p>
+                  </div>
+                  <div className="flex items-center flex-shrink-0 -space-x-6">
+                    <div className="flex items-center justify-center w-12 h-12 transition-colors duration-200 ease-in-out bg-gray-700 border-4 border-gray-900 rounded-full select-none group-hover:border-gray-800 group-focus:border-gray-800">
+                      {conversation[5] ? (
+                        <span className="text-base font-semibold">{conversation[5]}</span>
+                      ) : (
+                        <span className="inline-flex items-center justify-center overflow-hidden rounded-full">
+                          <svg className="w-6 h-6" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 83 89">
+                            <path d="M41.864 43.258c10.45 0 19.532-9.375 19.532-21.582C61.396 9.616 52.314.68 41.864.68c-10.449 0-19.53 9.13-19.53 21.093 0 12.11 9.032 21.485 19.53 21.485zM11.152 88.473H72.48c7.715 0 10.449-2.198 10.449-6.495 0-12.597-15.772-29.98-41.113-29.98C16.523 51.998.75 69.381.75 81.978c0 4.297 2.735 6.495 10.4 6.495z" />
+                          </svg>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </Modal>
     </>
   );
