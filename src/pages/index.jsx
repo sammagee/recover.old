@@ -239,7 +239,12 @@ export default function Home() {
     messagesLoader.current && observer.observe(messagesLoader.current)
   }, [messagesContainer.current])
 
-  useEffect(async() => selectedConversation && await loadMessages(selectedConversation[0]), [messagesPage])
+  useEffect(async() => {
+    if (!messagesContainer.current) return
+    const currentScrollHeight = messagesContainer.current.scrollHeight
+    selectedConversation && await loadMessages(selectedConversation[0])
+    messagesContainer.current.scrollTop = messagesContainer.current.scrollHeight - currentScrollHeight
+  }, [messagesPage])
 
   return (
     <>
