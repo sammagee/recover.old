@@ -58,12 +58,15 @@ export default function Home() {
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [conversations, setConversations] = useState([])
   const [messages, setMessages] = useState([])
+  const [messagesPage, setMessagesPage] = useState(0)
+  const [messagesEnd, setMessagesEnd] = useState(false)
   const [selectedConversation, setSelectedConversation] = useState()
   const backupBtn = useRef(null)
   const locateBtn = useRef(null)
   const openBtn = useRef(null)
   const messagesBtn = useRef(null)
   const messagesContainer = useRef(null)
+  const messagesLoader = useRef(null)
 
   const locate = () => {
     setStep(Step.LOCATE)
@@ -108,8 +111,8 @@ export default function Home() {
 
   const parseTimestamp = field_name => {
     return `CASE WHEN (${field_name} > 1000000000) THEN datetime(${field_name} / 1000000000 + 978307200, 'unixepoch') 
-      WHEN ${field_name} <> 0 THEN datetime((${field_name} + 978307200), 'unixepoch') 
-      ELSE ${field_name} END`
+          WHEN ${field_name} <> 0 THEN datetime((${field_name} + 978307200), 'unixepoch') 
+          ELSE ${field_name} END`
   }
 
   const getName = async(messageDest) => {
@@ -125,9 +128,7 @@ export default function Home() {
     }
 
     const result = (await DB('ADDRESS_BOOK')).exec(`
-      SELECT
-        c0First as first,
-        c1Last as last
+      SELECT c0First as first, c1Last as last
       FROM ABPersonFullTextSearch_content
       WHERE c16Phone LIKE '%${messageDest}%'
     `)
@@ -178,9 +179,13 @@ export default function Home() {
   }
 
   const selectConversation = async(conversation) => {
-    setLoadingMessages(true)
     setSelectedConversation(conversation)
+    await loadMessages(conversation[0])
+  }
 
+  const loadMessages = async(conversationId) => {
+    setLoadingMessages(true)
+    const limit = 20
     const messagesTemp = (await DB('SMS')).exec(`
       SELECT
         chat.chat_identifier,
@@ -193,22 +198,48 @@ export default function Home() {
         ON message.ROWID = chat_message_join.message_id
       JOIN chat
         ON chat.ROWID = chat_message_join.chat_id
-      WHERE chat.chat_identifier = '${conversation[0]}'
-      ORDER BY message.date ASC
+      WHERE chat.chat_identifier = '${conversationId}'
+      ORDER BY message.date DESC
+      LIMIT ${limit} OFFSET ${limit * messagesPage}
     `)?.[0]?.values
+    if (!messagesTemp) {
+      setMessagesEnd(true)
+      return
+    }
     const messagesMap = await messagesTemp.map(async(message) => {
       const name = await getName(message[0])
       const initials = name.replace(/[^a-zA-Z\s]/g, '').match(/\b\w/g)?.join('').toUpperCase()
       return [...message, name, initials]
     })
-    setMessages(await Promise.all(messagesMap))
+    const newMessages = await Promise.all(messagesMap)
+    setMessages(currentMessages => [...newMessages.reverse(), ...currentMessages])
     setLoadingMessages(false)
-    messagesContainer.current.scrollTop = messagesContainer.current.scrollHeight
   }
+
+  const resetMessages = () => {
+    setMessagesEnd(false)
+    setMessagesPage(0)
+    setMessages([])
+    setSelectedConversation(undefined)
+  }
+
+  useEffect(async() => setSQL(await initSqlJs({ locateFile: file => `https://sql.js.org/dist/${file}` })), [])
 
   useEffect(() => backupBtn.current?.focus(), [backupBtn])
 
-  useEffect(async() => setSQL(await initSqlJs({ locateFile: file => `https://sql.js.org/dist/${file}` })), [])
+  useEffect(() => {
+    if (!messagesContainer.current) return
+    messagesContainer.current.scrollTop = messagesContainer.current.scrollHeight
+  }, [messagesContainer.current])
+
+  useEffect(() => {
+    if (!messagesContainer.current) return
+    const handleObserver = entities => entities[0].isIntersecting && setMessagesPage(page => page + 1)
+    const observer = new IntersectionObserver(handleObserver, {root: messagesContainer.current, rootMargin: '0px', threshold: 1})
+    messagesLoader.current && observer.observe(messagesLoader.current)
+  }, [messagesContainer.current])
+
+  useEffect(async() => selectedConversation && await loadMessages(selectedConversation[0]), [messagesPage])
 
   return (
     <>
@@ -373,10 +404,7 @@ export default function Home() {
             <div className="flex items-center space-x-2">
               <button
                 className="focus:outline-none focus:ring-2 focus:ring-green-500"
-                onClick={() => {
-                  setMessages([])
-                  setSelectedConversation(undefined)
-                }}
+                onClick={resetMessages}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="w-4 h-4 text-gray-500">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -389,12 +417,35 @@ export default function Home() {
         </h3>
 
         {messages.length > 0 && (
-          <ul
+          <div
             ref={messagesContainer}
-            className="mt-3 overflow-y-auto max-h-48 shadow-scroll overscroll-contain"
+            className="mt-3 overflow-y-auto max-h-48 shadow-scroll"
           >
+            {!messagesEnd ? (
+              <button
+                ref={messagesLoader}
+                className={clsx(
+                  'select-none flex items-center justify-center w-10 h-10 mx-auto mt-3 transition-colors duration-200 ease-in-out bg-gray-800 rounded-full shadow-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-gray-900 focus:ring-offset-2 focus:bg-gray-700',
+                  loadingMessages ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-700',
+                )}
+                disabled={loadingMessages}
+                onClick={() => setMessagesPage(page => page + 1)}
+              >
+                {!loadingMessages ? (
+                  <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4 text-gray-500 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                )}
+              </button>
+            ) : <p className="py-4 mx-auto text-xs text-center text-gray-600">End of Messages</p>}
+
             {messages.map((message, index) => (
-              <li
+              <div
                 className={clsx(
                   'max-w-xs flex items-end',
                   message[1] === 1 && 'ml-auto justify-end',
@@ -473,9 +524,9 @@ export default function Home() {
                     <p className="text-left break-word">{message[3]}</p>
                   </div>
                 </div>
-              </li>
+              </div>
             ))}
-          </ul>
+          </div>
         )}
 
         {messages.length === 0 && (
