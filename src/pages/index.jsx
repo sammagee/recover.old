@@ -1,6 +1,5 @@
 import Head from 'next/head'
 import Details from '../components/details'
-import TextLoop from 'react-text-loop'
 import { useEffect, useRef, useState } from 'react'
 import initSqlJs from 'sql.js'
 import Button from '../components/button'
@@ -9,6 +8,7 @@ import clsx from 'clsx'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import updateLocale from 'dayjs/plugin/updateLocale'
+import html2pdf from 'html2pdf.js'
 
 dayjs.extend(relativeTime)
 dayjs.extend(updateLocale)
@@ -223,6 +223,15 @@ export default function Home() {
     setSelectedConversation(undefined)
   }
 
+  const downloadMessages = async() => {
+    html2pdf().set({
+      margin: 16,
+      pagebreak: {mode: 'avoid-all'},
+      filename: 'Messages.pdf',
+      html2canvas:  { scale: 2 },
+    }).from(document.getElementById('messages')).save();
+  }
+
   useEffect(async() => setSQL(await initSqlJs({ locateFile: file => `https://sql.js.org/dist/${file}` })), [])
 
   useEffect(() => backupBtn.current?.focus(), [backupBtn])
@@ -258,11 +267,7 @@ export default function Home() {
           <h1 className="text-4xl font-black text-white">Recover</h1>
           <h2 className="mt-2 text-2xl font-bold text-green-200">
             Save the{' '}
-            <TextLoop className="text-green-500" interval={5000}>
-              {/* <span>memories</span> */}
-              <span>conversations</span>
-              {/* <span>voicemails</span> */}
-            </TextLoop>
+            <span className="text-green-500">conversations</span>
             {' '}that
             <br />
             mean the world to you
@@ -396,7 +401,7 @@ export default function Home() {
         actions={(
           <>
             <Button offsetClass="focus:ring-offset-gray-800" variant="secondary" onClick={() => setShowModal(false)}>Close</Button>
-            {messages.length > 0 && <Button offsetClass="focus:ring-offset-gray-800" onClick={() => setShowModal(false)}>Download Messages</Button>}
+            {messages.length > 0 && <Button offsetClass="focus:ring-offset-gray-800" onClick={downloadMessages}>Download Messages</Button>}
           </>
         )}
         icon={<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />}
@@ -423,6 +428,7 @@ export default function Home() {
 
         {messages.length > 0 && (
           <div
+            id="messagesContainer"
             ref={messagesContainer}
             className="mt-3 overflow-y-auto max-h-48 shadow-scroll"
           >
@@ -449,46 +455,17 @@ export default function Home() {
               </button>
             ) : <p className="py-4 mx-auto text-xs text-center text-gray-600">End of Messages</p>}
 
-            {messages.map((message, index) => (
-              <div
-                className={clsx(
-                  'max-w-xs flex items-end',
-                  message[1] === 1 && 'ml-auto justify-end',
-                  index > 0 && message[1] !== messages[index - 1][1] ? 'mt-2' : 'mt-px',
-                )}
-                key={message[2] + index}
-              >
-                {((index < messages.length - 1 && index > 0
-                    && message[1] === 0
-                    && message[1] !== messages[index + 1][1]
-                    && message[1] === messages[index - 1][1]
-                  ) || ((index < messages.length - 1 && index > 0)
-                    && message[1] === 0
-                    && message[1] !== messages[index - 1][1]
-                    && message[1] !== messages[index + 1][1]
-                  ) || ((index === 0
-                      && message[1] === 0
-                      && message[1] !== messages[index + 1][1])
-                    ) || (index === messages.length - 1
-                      && message[1] === 0
-                      && message[1] !== messages[index - 1][1]))
-                  && (
-                  <div className="flex items-center justify-center flex-shrink-0 w-8 h-8 mr-2 transition-colors duration-200 ease-in-out bg-gray-700 rounded-full select-none group-hover:border-gray-800 group-focus:border-gray-800">
-                    {message[6] ? (
-                      <span className="text-sm font-semibold">{message[6]}</span>
-                    ) : (
-                      <span className="inline-flex items-center justify-center overflow-hidden rounded-full">
-                        <svg className="w-4 h-4" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 83 89">
-                          <path d="M41.864 43.258c10.45 0 19.532-9.375 19.532-21.582C61.396 9.616 52.314.68 41.864.68c-10.449 0-19.53 9.13-19.53 21.093 0 12.11 9.032 21.485 19.53 21.485zM11.152 88.473H72.48c7.715 0 10.449-2.198 10.449-6.495 0-12.597-15.772-29.98-41.113-29.98C16.523 51.998.75 69.381.75 81.978c0 4.297 2.735 6.495 10.4 6.495z" />
-                        </svg>
-                      </span>
-                    )}
-                  </div>
-                )}
-
+            <div id="messages">
+              {messages.map((message, index) => (
                 <div
                   className={clsx(
-                    !((index < messages.length - 1 && index > 0
+                    'max-w-xs flex items-end',
+                    message[1] === 1 && 'ml-auto justify-end',
+                    index > 0 && message[1] !== messages[index - 1][1] ? 'mt-2' : 'mt-px',
+                  )}
+                  key={message[2] + index}
+                >
+                  {((index < messages.length - 1 && index > 0
                       && message[1] === 0
                       && message[1] !== messages[index + 1][1]
                       && message[1] === messages[index - 1][1]
@@ -501,36 +478,67 @@ export default function Home() {
                         && message[1] !== messages[index + 1][1])
                       ) || (index === messages.length - 1
                         && message[1] === 0
-                        && message[1] !== messages[index - 1][1])) && 'ml-10',
-                    message[1] === 1 && 'text-right',
-                  )}
-                >
-                  {((index > 0 && message[1] === 0 && message[1] !== messages[index - 1][1])
-                    || (index === 0 && message[1] === 0)) && (
-                    <span className="ml-3 text-xs">
-                      {message[5]}<span className="text-gray-500">{' '} &middot; {' '}{dayjs(message[2]).fromNow()}</span>
-                    </span>
-                  )}
-
-                  {((index > 0 && message[1] === 1 && message[1] !== messages[index - 1][1])
-                    || (index === 0 && message[1] === 1)) && (
-                    <span className="mr-3 text-xs">
-                      <span className="text-gray-500">{dayjs(message[2]).fromNow()}{' '} &middot; {' '}</span>Me
-                    </span>
+                        && message[1] !== messages[index - 1][1]))
+                    && (
+                    <div className="flex items-center justify-center flex-shrink-0 w-8 h-8 mr-2 text-gray-400 transition-colors duration-200 ease-in-out bg-gray-700 rounded-full select-none group-hover:border-gray-800 group-focus:border-gray-800">
+                      {message[6] ? (
+                        <span className="text-sm font-semibold">{message[6]}</span>
+                      ) : (
+                        <span className="inline-flex items-center justify-center overflow-hidden rounded-full">
+                          <svg className="w-4 h-4" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 83 89">
+                            <path d="M41.864 43.258c10.45 0 19.532-9.375 19.532-21.582C61.396 9.616 52.314.68 41.864.68c-10.449 0-19.53 9.13-19.53 21.093 0 12.11 9.032 21.485 19.53 21.485zM11.152 88.473H72.48c7.715 0 10.449-2.198 10.449-6.495 0-12.597-15.772-29.98-41.113-29.98C16.523 51.998.75 69.381.75 81.978c0 4.297 2.735 6.495 10.4 6.495z" />
+                          </svg>
+                        </span>
+                      )}
+                    </div>
                   )}
 
                   <div
                     className={clsx(
-                      'py-1 px-3 rounded-2xl max-w-max',
-                      message[1] === 1 ? message[4] === 'SMS' ? 'bg-green-500 text-green-100' : 'bg-blue-500 text-blue-100' : 'bg-gray-700 text-gray-300',
-                      message[1] === 1 && 'ml-auto',
+                      !((index < messages.length - 1 && index > 0
+                        && message[1] === 0
+                        && message[1] !== messages[index + 1][1]
+                        && message[1] === messages[index - 1][1]
+                      ) || ((index < messages.length - 1 && index > 0)
+                        && message[1] === 0
+                        && message[1] !== messages[index - 1][1]
+                        && message[1] !== messages[index + 1][1]
+                      ) || ((index === 0
+                          && message[1] === 0
+                          && message[1] !== messages[index + 1][1])
+                        ) || (index === messages.length - 1
+                          && message[1] === 0
+                          && message[1] !== messages[index - 1][1])) && 'ml-10',
+                      message[1] === 1 && 'text-right',
                     )}
                   >
-                    <p className="text-left break-word">{message[3]}</p>
+                    {((index > 0 && message[1] === 0 && message[1] !== messages[index - 1][1])
+                      || (index === 0 && message[1] === 0)) && (
+                      <span className="ml-3 text-xs text-gray-400">
+                        {message[5]}<span className="text-gray-500">{' '} &middot; {' '}{dayjs(message[2]).fromNow()}</span>
+                      </span>
+                    )}
+
+                    {((index > 0 && message[1] === 1 && message[1] !== messages[index - 1][1])
+                      || (index === 0 && message[1] === 1)) && (
+                      <span className="mr-3 text-xs text-gray-400">
+                        <span className="text-gray-500">{dayjs(message[2]).fromNow()}{' '} &middot; {' '}</span>Me
+                      </span>
+                    )}
+
+                    <div
+                      className={clsx(
+                        'py-1 px-3 rounded-2xl max-w-max',
+                        message[1] === 1 ? message[4] === 'SMS' ? 'bg-green-500 text-green-100' : 'bg-blue-500 text-blue-100' : 'bg-gray-700 text-gray-300',
+                        message[1] === 1 && 'ml-auto',
+                      )}
+                    >
+                      <p className="text-left break-word">{message[3]}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
 
