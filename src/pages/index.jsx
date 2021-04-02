@@ -8,7 +8,6 @@ import clsx from 'clsx'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import updateLocale from 'dayjs/plugin/updateLocale'
-import html2pdf from 'html2pdf.js'
 
 dayjs.extend(relativeTime)
 dayjs.extend(updateLocale)
@@ -224,6 +223,7 @@ export default function Home() {
   }
 
   const downloadMessages = async() => {
+    const html2pdf = (await import('html2pdf.js')).default
     html2pdf().set({
       margin: 16,
       pagebreak: {mode: 'avoid-all'},
