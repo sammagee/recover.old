@@ -38,7 +38,7 @@ export default function Modal({
       <div className="fixed inset-0 z-30 overflow-x-hidden overflow-y-auto pb-safe-bottom">
         <div className="flex items-end justify-center min-h-screen p-4 text-center sm:block sm:p-0">
           <Transition.Child
-            className="fixed inset-0 transition-all bg-black backdrop-filter backdrop-blur-sm bg-opacity-90 focus:outline-none"
+            className="fixed inset-0 transition-all bg-black bg-opacity-90 focus:outline-none"
             enter="duration-300 ease-out"
             enterFrom="opacity-0"
             enterTo="opacity-100"

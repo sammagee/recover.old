@@ -10,7 +10,7 @@ export default function Details({children, disabled, open = false, summary}) {
   return (
     <>
       <button
-        className={clsx('flex items-center justify-between w-full focus:outline-none', disabled && 'opacity-25 cursor-not-allowed')}
+        className={clsx('flex items-center justify-between w-full border-2 border-dashed border-transparent focus:outline-none -ml-0.5 -top-0.5 focus:border-green-500', disabled && 'opacity-25 cursor-not-allowed')}
         disabled={disabled}
         onClick={() => setIsOpen(!isOpen)}
       >

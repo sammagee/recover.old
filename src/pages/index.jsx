@@ -8,6 +8,7 @@ import clsx from 'clsx'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import updateLocale from 'dayjs/plugin/updateLocale'
+import filehash from '../utils/fileHash'
 
 dayjs.extend(relativeTime)
 dayjs.extend(updateLocale)
@@ -35,8 +36,9 @@ const Databases = {
 }
 
 const Locations = {
-  ADDRESS_BOOK: '31bb7ba8914766d4ba40d6dfb6113c8b614be442',
-  SMS: '3d0d7e5fb2ce288813306e4d4636395e047a3d28',
+  ADDRESS_BOOK: filehash('Library/AddressBook/AddressBook.sqlitedb'),
+  SMS: filehash('Library/SMS/sms.db'),
+  VOICEMAILS: filehash('Library/Voicemail/voicemail.db'),
 }
 
 const Step = {
@@ -52,7 +54,8 @@ export default function Home() {
   const [step, setStep] = useState(Step.BACKUP)
   const [SQL, setSQL] = useState()
   const [parent, setParent] = useState()
-  const [showModal, setShowModal] = useState(false)
+  const [showMessagesModal, setShowMessagesModal] = useState(false)
+  const [showVoicemailsModal, setShowVoicemailsModal] = useState(false)
   const [loadingConversations, setLoadingConversations] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [conversations, setConversations] = useState([])
@@ -60,12 +63,16 @@ export default function Home() {
   const [messagesPage, setMessagesPage] = useState(0)
   const [messagesEnd, setMessagesEnd] = useState(false)
   const [selectedConversation, setSelectedConversation] = useState()
+  const [voicemails, setVoicemails] = useState([])
+  const [loadingVoicemails, setLoadingVoicemails] = useState(false)
   const backupBtn = useRef(null)
   const locateBtn = useRef(null)
   const openBtn = useRef(null)
   const messagesBtn = useRef(null)
   const messagesContainer = useRef(null)
   const messagesLoader = useRef(null)
+  const voicemailsBtn = useRef(null)
+  const voicemailsContainer = useRef(null)
 
   const locate = () => {
     setStep(Step.LOCATE)
@@ -114,36 +121,35 @@ export default function Home() {
           ELSE ${field_name} END`
   }
 
-  const getName = async(messageDest) => {
-    if (messageDest.indexOf('@') === -1) {
-      messageDest = messageDest.replace(/[\s+\-()]*/g, '')
-      if (messageDest.length === 11 && messageDest[0] === '1') {
-        messageDest = messageDest.substring(1)
+  const getName = async(dest) => {
+    if (dest.indexOf('@') === -1) {
+      dest = dest.replace(/[\s+\-()]*/g, '')
+      if (dest.length === 11 && dest[0] === '1') {
+        dest = dest.substring(1)
       }
     }
 
-    if (cache[messageDest] !== undefined) {
-      return cache[messageDest]
+    if (cache[dest] !== undefined) {
+      return cache[dest]
     }
 
     const result = (await DB('ADDRESS_BOOK')).exec(`
       SELECT c0First as first, c1Last as last
       FROM ABPersonFullTextSearch_content
-      WHERE c16Phone LIKE '%${messageDest}%'
+      WHERE c16Phone LIKE '%${dest}%'
     `)
     let name = result?.[0]?.values?.[0]
     name = typeof name !== 'undefined' && name[0]
       ? name[1] ? `${name[0]} ${name[1]}` : name[0]
-      : messageDest
+      : dest
 
-    cache[messageDest] = name
+    cache[dest] = name
 
     return name
   }
 
   const getConversations = async() => {
     setLoadingConversations(true)
-
     const conversationsTemp = (await DB('SMS')).exec(`
       SELECT
         messages.chat_identifier,
@@ -174,7 +180,7 @@ export default function Home() {
     })
     setConversations(await Promise.all(conversationsMap))
     setLoadingConversations(false)
-    setShowModal(true)
+    setShowMessagesModal(true)
   }
 
   const selectConversation = async(conversation) => {
@@ -230,6 +236,27 @@ export default function Home() {
       filename: 'Messages.pdf',
       html2canvas:  { scale: 2 },
     }).from(document.getElementById('messages')).save();
+  }
+
+  const getVoicemails = async() => {
+    setLoadingVoicemails(true)
+    const voicemailsTemp = (await DB('VOICEMAILS')).exec(`
+      SELECT
+        ROWID,
+        sender,
+        duration,
+        datetime(date, 'unixepoch') AS XFORMATTEDDATESTRING
+      FROM voicemail
+      ORDER BY date DESC
+    `)?.[0]?.values
+    const voicemailsMap = await voicemailsTemp.map(async(voicemail) => {
+      const name = await getName(voicemail[1])
+      const initials = name.replace(/[^a-zA-Z\s]/g, '').match(/\b\w/g)?.join('').toUpperCase()
+      return [...voicemail, name, initials]
+    })
+    setVoicemails(await Promise.all(voicemailsMap))
+    setLoadingVoicemails(false)
+    setShowVoicemailsModal(true)
   }
 
   useEffect(async() => setSQL(await initSqlJs({ locateFile: file => `https://sql.js.org/dist/${file}` })), [])
@@ -373,23 +400,47 @@ export default function Home() {
                   disabled={[Step.BACKUP, Step.LOCATE, Step.OPEN].includes(step) || !parent}
                   open={step === Step.EXPORT}
                 >
-                  <Button
-                    ref={messagesBtn}
-                    className="w-full mt-6"
-                    disabled={loadingConversations}
-                    onClick={getConversations}
-                  >
-                    {loadingConversations && <span className="flex-shrink-0 inline-block w-5" />}
+                  <div className="grid grid-cols-2 gap-3 mt-6">
+                    <Button
+                      ref={messagesBtn}
+                      disabled={loadingConversations}
+                      onClick={getConversations}
+                    >
+                      <span className="flex-shrink-0 inline-block w-5" />
+                      <span className="flex-1 mx-4 text-center">Messages</span>
 
-                    <span className="flex-1 mx-4 text-center">Messages</span>
+                      {loadingConversations ? (
+                        <svg className="flex-shrink-0 w-5 h-5 text-green-100 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                      ) : (
+                        <svg className="flex-shrink-0 w-5 h-5 opacity-75" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                        </svg>
+                      )}
+                    </Button>
 
-                    {loadingConversations && (
-                      <svg className="flex-shrink-0 w-5 h-5 text-green-100 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                    )}
-                  </Button>
+                    <Button
+                      ref={voicemailsBtn}
+                      disabled={loadingVoicemails}
+                      onClick={getVoicemails}
+                    >
+                      <span className="flex-shrink-0 inline-block w-5" />
+                      <span className="flex-1 mx-4 text-center">Voicemails</span>
+
+                      {loadingVoicemails ? (
+                        <svg className="flex-shrink-0 w-5 h-5 text-green-100 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                      ) : (
+                        <svg className="flex-shrink-0 w-5 h-5 opacity-75" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                        </svg>
+                      )}
+                    </Button>
+                  </div>
                 </Details>
               </li>
             </ol>
@@ -407,17 +458,18 @@ export default function Home() {
         </div>
       </main>
 
+      {/* Messages Modal */}
       <Modal
         actions={(
           <>
-            <Button offsetClass="focus:ring-offset-gray-800" variant="secondary" onClick={() => setShowModal(false)}>Close</Button>
+            <Button offsetClass="focus:ring-offset-gray-800" variant="secondary" onClick={() => setShowMessagesModal(false)}>Close</Button>
             {messages.length > 0 && <Button offsetClass="focus:ring-offset-gray-800" onClick={downloadMessages}>Download Messages</Button>}
           </>
         )}
-        icon={<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />}
-        show={showModal}
-        setShow={setShowModal}
-        title="Export Messages"
+        icon={<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />}
+        show={showMessagesModal}
+        setShow={setShowMessagesModal}
+        title="Messages"
       >
         <h3 className="text-sm font-semibold text-gray-500">
           {messages.length > 0 ? (
@@ -553,9 +605,9 @@ export default function Home() {
         )}
 
         {messages.length === 0 && (
-          <ul className="mt-3 -ml-6 overflow-y-auto max-h-48 shadow-scroll overscroll-contain">
+          <div className="mt-3 overflow-y-auto sm:-ml-6 max-h-48 shadow-scroll overscroll-contain">
             {conversations.map(conversation => (
-              <li key={conversation[0]}>
+              <div key={conversation[0]}>
                 <button
                   className="flex items-center justify-between w-full px-6 py-2 space-x-3 text-left transition-colors duration-200 ease-in-out rounded-xl focus:outline-none hover:bg-gray-800 focus:bg-gray-800 group"
                   onClick={() => selectConversation(conversation)}
@@ -578,9 +630,61 @@ export default function Home() {
                     </div>
                   </div>
                 </button>
-              </li>
+              </div>
             ))}
-          </ul>
+          </div>
+        )}
+      </Modal>
+
+      {/* Voicemails Modal */}
+      <Modal
+        actions={<Button offsetClass="focus:ring-offset-gray-800" variant="secondary" onClick={() => setShowVoicemailsModal(false)}>Close</Button>}
+        icon={<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />}
+        show={showVoicemailsModal}
+        setShow={setShowVoicemailsModal}
+        title="Voicemails"
+      >
+        {voicemails.length > 0 && (
+          <div
+            id="voicemailsContainer"
+            ref={voicemailsContainer}
+            className="mt-3 overflow-y-auto sm:-ml-6 max-h-48 shadow-scroll overscroll-contain"
+          >
+            <div id="voicemails">
+              {voicemails.map(voicemail => (
+                <div key={voicemail[0]}>
+                  <div className="flex items-center justify-between w-full px-6 py-2 space-x-3 text-left transition-colors duration-200 ease-in-out rounded-xl focus:outline-none hover:bg-gray-800 focus:bg-gray-800 group">
+                    <div className="flex items-center space-x-3">
+                      <div className="flex items-center justify-center w-10 h-10 bg-gray-700 rounded-full select-none">
+                        {voicemail[5] ? (
+                          <span className="text-base font-semibold">{voicemail[5]}</span>
+                        ) : (
+                          <span className="inline-flex items-center justify-center overflow-hidden rounded-full">
+                            <svg className="w-6 h-6" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 83 89">
+                              <path d="M41.864 43.258c10.45 0 19.532-9.375 19.532-21.582C61.396 9.616 52.314.68 41.864.68c-10.449 0-19.53 9.13-19.53 21.093 0 12.11 9.032 21.485 19.53 21.485zM11.152 88.473H72.48c7.715 0 10.449-2.198 10.449-6.495 0-12.597-15.772-29.98-41.113-29.98C16.523 51.998.75 69.381.75 81.978c0 4.297 2.735 6.495 10.4 6.495z" />
+                            </svg>
+                          </span>
+                        )}
+                      </div>
+
+                      <div>
+                        <span className="font-semibold">{voicemail[4]}</span>
+                        <p className="text-sm text-gray-500">
+                          {dayjs(voicemail[3]).fromNow()}{' '}&middot;{' '}{voicemail[2]}s
+                        </p>
+                      </div>
+                    </div>
+
+                    <button className="flex items-center justify-center w-10 h-10 transition-colors duration-200 ease-in-out rounded-full focus:outline-none hover:bg-gray-700 focus:bg-gray-700 focus:ring-2 focus:ring-offset-2 focus:ring-gray-700 focus:ring-offset-gray-800">
+                      <svg className="w-5 h-5 text-gray-500" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </Modal>
     </>
